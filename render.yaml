@@ -1,6 +1,8 @@
 services:
   - type: web
-    name: fillword-game
+    name: fillword-game-sg
     runtime: docker
     plan: free
+    region: singapore
     dockerfilePath: ./Dockerfile
+    dockerContext: .

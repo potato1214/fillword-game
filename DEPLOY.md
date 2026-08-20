@@ -2,6 +2,14 @@
 
 本项目已经准备好 `Dockerfile` 和 `render.yaml`，推荐部署到 Render，部署成功后可以得到一个长期固定的公网地址。
 
+## 当前线上地址
+
+- 正式地址：<https://fillword-game-sg.onrender.com>
+- GitHub 仓库：<https://github.com/potato1214/fillword-game>
+- Render 控制台：[打开服务页面](https://dashboard.render.com/web/srv-da38m50u01pc7385edm0)
+
+后续修改代码后推到 GitHub `main` 分支即可，Render 会自动构建部署。
+
 ## 自动部署
 
 项目里提供了 `deploy.mjs`，可以自动完成“推送 GitHub + 创建 Render 服务”。使用前需要先准备两个令牌：
@@ -22,7 +30,7 @@ setx RENDER_API_KEY "你的 Render API Key"
 node deploy.mjs
 ```
 
-脚本会自动创建名为 `fillword-game` 的 GitHub 仓库、推送代码，并在 Render 上创建 Docker Web Service。
+脚本会自动创建名为 `fillword-game` 的 GitHub 仓库、推送代码，并在 Render Singapore 区域创建 Docker Web Service。
 
 ## 方式一：部署到 Render（推荐）
 
@@ -38,8 +46,9 @@ node deploy.mjs
 3. 在 Render 控制台点击 `New +`，选择 `Web Service`。
 4. 连接你的 GitHub 仓库，选择 `fillword-game`。
 5. 运行时选择 `Docker`，Render 会自动读取仓库里的 `Dockerfile`。
-6. 点击 `Create Web Service`，等待构建完成。
-7. 构建完成后，Render 会提供一个 `https://xxx.onrender.com` 的永久地址，直接发给朋友即可。
+6. 服务名填写 `fillword-game-sg`，区域选择 Singapore，实例类型选择 Free。
+7. 点击 `Create Web Service`，等待构建完成。
+8. 构建完成后，Render 会提供一个 `https://xxx.onrender.com` 的永久地址，直接发给朋友即可。
 
 ## 方式二：部署到 Railway
 

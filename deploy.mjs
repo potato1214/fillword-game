@@ -158,7 +158,8 @@ if (!renderKey) {
   process.exit(0);
 }
 
-console.log("step: 创建 Render 服务");
+const renderServiceName = "fillword-game-sg";
+console.log("step: 检查 Render 服务");
 console.log("step: 获取 Render 工作区");
 const ownersRes = await fetch("https://api.render.com/v1/owners", {
   headers: {
@@ -180,15 +181,35 @@ if (!owner?.id) {
 }
 console.log("使用 Render 工作区：", owner.name || owner.email || owner.id, "（", owner.id, "）");
 
+const renderHeaders = {
+  Authorization: `Bearer ${renderKey}`,
+  "Content-Type": "application/json",
+};
+const existingServicesRes = await fetch(
+  `https://api.render.com/v1/services?ownerId=${encodeURIComponent(owner.id)}`,
+  { headers: renderHeaders },
+);
+const existingServicesData = await existingServicesRes.json();
+const existingService =
+  (Array.isArray(existingServicesData) &&
+    existingServicesData
+      .map((item) => item.service || item)
+      .find((item) => item.name === renderServiceName)) ||
+  null;
+if (existingService) {
+  console.log("Render 服务已存在，无需重复创建");
+  console.log("Render 服务 ID：", existingService.id);
+  console.log("Render 服务地址：", `https://${existingService.slug || renderServiceName}.onrender.com`);
+  process.exit(0);
+}
+
+console.log("step: 创建 Render 服务");
 const renderRes = await fetch("https://api.render.com/v1/services", {
   method: "POST",
-  headers: {
-    Authorization: `Bearer ${renderKey}`,
-    "Content-Type": "application/json",
-  },
+  headers: renderHeaders,
   body: JSON.stringify({
     type: "web_service",
-    name: "fillword-game",
+    name: renderServiceName,
     ownerId: owner.id,
     repo: `https://github.com/${login}/${repoName}`,
     branch: "main",
@@ -196,7 +217,7 @@ const renderRes = await fetch("https://api.render.com/v1/services", {
     serviceDetails: {
       runtime: "docker",
       plan: "free",
-      region: "oregon",
+      region: "singapore",
       numInstances: 1,
       envSpecificDetails: {
         dockerfilePath: "./Dockerfile",
@@ -212,4 +233,4 @@ if (!renderRes.ok) {
 }
 const service = renderData.service || renderData;
 console.log("Render 服务已创建，服务 ID：", service.id);
-console.log("Render 服务地址通常为：", `https://${service.slug || "fillword-game"}.onrender.com`);
+console.log("Render 服务地址：", `https://${service.slug || renderServiceName}.onrender.com`);
