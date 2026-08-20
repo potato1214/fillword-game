@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>填字游戏</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>填字游戏</h1>
+        <p>把你的回答填进别人的剧本里</p>
+      </div>
+    </header>
+
+    <main>
+      <section id="library" class="section">
+        <div class="section-head">
+          <h2>选择剧本</h2>
+          <span id="script-count" class="muted"></span>
+        </div>
+        <div class="search-row">
+          <input
+            id="meme-search"
+            class="prompt-input"
+            type="search"
+            placeholder="输入热梗名或粘贴完整台词"
+            autocomplete="off"
+          />
+          <button id="search-btn" class="primary-button" type="button">生成</button>
+        </div>
+        <div id="network-results" class="network-results hidden"></div>
+        <div id="script-grid" class="script-grid"></div>
+      </section>
+
+      <section id="setup" class="section hidden">
+        <div class="panel">
+          <div class="panel-head">
+            <h2 id="setup-title"></h2>
+            <button id="back-library" class="ghost-button" type="button">返回</button>
+          </div>
+          <p id="setup-desc" class="muted"></p>
+          <div class="field">
+            <label for="blank-count">挖空数量</label>
+            <div id="blank-count" class="segmented" role="group" aria-label="挖空数量">
+              <button type="button" data-count="6">6 个</button>
+              <button type="button" data-count="8" class="active">8 个</button>
+              <button type="button" data-count="10">10 个</button>
+            </div>
+          </div>
+          <button id="start-game" class="primary-button" type="button">开始游戏</button>
+        </div>
+      </section>
+
+      <section id="play" class="section hidden">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2 id="play-title"></h2>
+              <p class="muted">按提示填写你的答案</p>
+            </div>
+            <button id="play-back" class="ghost-button" type="button">换剧本</button>
+          </div>
+          <form id="prompt-form">
+            <div id="prompt-list" class="prompt-list"></div>
+            <button id="submit-answers" class="primary-button" type="submit">生成剧本</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="result" class="section hidden">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2 id="result-title"></h2>
+              <p class="muted">这是用你的回答拼出来的剧本</p>
+            </div>
+            <div class="button-row">
+              <button id="toggle-original" class="ghost-button" type="button">查看原剧本</button>
+              <button id="again" class="ghost-button" type="button">再来一局</button>
+              <button id="result-back" class="primary-button" type="button">换个剧本</button>
+            </div>
+          </div>
+          <div id="script-view" class="script-view" aria-live="polite"></div>
+          <div class="video-panel">
+            <div class="video-panel-head">
+              <div>
+                <h3>视频提示词</h3>
+                <p class="muted">可交给 Seedance 或同类视频模型使用</p>
+              </div>
+              <div class="button-row">
+                <button id="refresh-prompt" class="ghost-button" type="button">重新生成</button>
+                <button id="copy-prompt" class="ghost-button" type="button">复制</button>
+              </div>
+            </div>
+            <label class="video-field" for="video-reference">参考视频链接</label>
+            <input
+              id="video-reference"
+              class="prompt-input"
+              type="url"
+              placeholder="https://"
+              autocomplete="off"
+            />
+            <textarea
+              id="video-prompt"
+              class="video-prompt"
+              rows="8"
+              spellcheck="false"
+            ></textarea>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>规则灵感来自 B 站《填词游戏》</span>
+    </footer>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
