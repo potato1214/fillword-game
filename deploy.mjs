@@ -170,10 +170,10 @@ if (!ownersRes.ok) {
   console.error("获取 Render 工作区失败", ownersRes.status, JSON.stringify(ownersData));
   process.exit(1);
 }
-const owner =
-  (Array.isArray(ownersData) &&
-    (ownersData.find((item) => String(item.id).startsWith("tea-")) || ownersData[0])) ||
-  null;
+const ownerCandidates = Array.isArray(ownersData)
+  ? ownersData.map((item) => item.owner || item).filter(Boolean)
+  : [];
+const owner = ownerCandidates.find((item) => String(item.id).startsWith("tea-")) || ownerCandidates[0] || null;
 if (!owner?.id) {
   console.error("未找到可用的 Render 工作区", JSON.stringify(ownersData));
   process.exit(1);
