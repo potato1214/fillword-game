@@ -57,7 +57,7 @@ if (repo.status === 404) {
   console.log("step: 创建 GitHub 仓库");
   const created = await github("/user/repos", {
     method: "POST",
-    body: { name: repoName, private: true, description: "填字游戏网站" },
+    body: { name: repoName, private: false, description: "填字游戏网站" },
   });
   if (created.status !== 201) {
     console.error("创建 GitHub 仓库失败", created.status, JSON.stringify(created.data));
@@ -67,6 +67,19 @@ if (repo.status === 404) {
   console.log("已创建 GitHub 仓库");
 } else {
   console.log("GitHub 仓库已存在");
+  if (repo.data?.private) {
+    console.log("step: 将 GitHub 仓库设为公开，供 Render 拉取");
+    const patched = await github(`/${repoPath}`, {
+      method: "PATCH",
+      body: { private: false },
+    });
+    if (patched.status !== 200) {
+      console.error("设置仓库为公开失败", patched.status, JSON.stringify(patched.data));
+      process.exit(1);
+    }
+    repo = patched;
+    console.log("GitHub 仓库已设为公开");
+  }
 }
 
 const cleanRepoUrl = `https://github.com/${login}/${repoName}.git`;
@@ -146,6 +159,27 @@ if (!renderKey) {
 }
 
 console.log("step: 创建 Render 服务");
+console.log("step: 获取 Render 工作区");
+const ownersRes = await fetch("https://api.render.com/v1/owners", {
+  headers: {
+    Authorization: `Bearer ${renderKey}`,
+  },
+});
+const ownersData = await ownersRes.json();
+if (!ownersRes.ok) {
+  console.error("获取 Render 工作区失败", ownersRes.status, JSON.stringify(ownersData));
+  process.exit(1);
+}
+const owner =
+  (Array.isArray(ownersData) &&
+    (ownersData.find((item) => String(item.id).startsWith("tea-")) || ownersData[0])) ||
+  null;
+if (!owner?.id) {
+  console.error("未找到可用的 Render 工作区", JSON.stringify(ownersData));
+  process.exit(1);
+}
+console.log("使用 Render 工作区：", owner.name || owner.email || owner.id, "（", owner.id, "）");
+
 const renderRes = await fetch("https://api.render.com/v1/services", {
   method: "POST",
   headers: {
@@ -153,15 +187,22 @@ const renderRes = await fetch("https://api.render.com/v1/services", {
     "Content-Type": "application/json",
   },
   body: JSON.stringify({
-    type: "web",
+    type: "web_service",
     name: "fillword-game",
-    env: "docker",
+    ownerId: owner.id,
     repo: `https://github.com/${login}/${repoName}`,
     branch: "main",
-    plan: "free",
-    dockerfilePath: "./Dockerfile",
-    dockerContext: ".",
-    autoDeploy: true,
+    autoDeploy: "yes",
+    serviceDetails: {
+      runtime: "docker",
+      plan: "free",
+      region: "oregon",
+      numInstances: 1,
+      envSpecificDetails: {
+        dockerfilePath: "./Dockerfile",
+        dockerContext: ".",
+      },
+    },
   }),
 });
 const renderData = await renderRes.json();
@@ -169,5 +210,6 @@ if (!renderRes.ok) {
   console.error("Render 创建服务失败", renderRes.status, JSON.stringify(renderData));
   process.exit(1);
 }
-console.log("Render 服务已创建，服务 ID：", renderData.id);
-console.log("Render 服务地址通常为：", `https://${renderData.service?.slug || "fillword-game"}.onrender.com`);
+const service = renderData.service || renderData;
+console.log("Render 服务已创建，服务 ID：", service.id);
+console.log("Render 服务地址通常为：", `https://${service.slug || "fillword-game"}.onrender.com`);
