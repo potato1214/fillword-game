@@ -109,7 +109,12 @@ async function pushViaApi() {
       content: content.toString("base64"),
     };
     const existing = await github(`/repos/${login}/${repoName}/contents/${encodedPath}`);
-    if (existing.status === 200 && existing.data.sha) {
+    if (existing.status === 200) {
+      const remoteContent = Buffer.from(existing.data.content, "base64");
+      if (remoteContent.equals(content)) {
+        console.log("无变化，跳过", rel);
+        continue;
+      }
       body.sha = existing.data.sha;
     }
     const res = await fetch(
