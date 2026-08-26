@@ -7,15 +7,15 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const workDir = resolve(scriptDir, "..", "..", "work");
 
 function readToken(envName, fileName) {
-  const envValue = process.env[envName] || "";
-  if (envValue && /^[\x00-\x7F]*$/.test(envValue) && !envValue.includes("你的")) {
-    return envValue.trim();
-  }
   for (const name of [fileName, `${fileName}.txt`]) {
     const filePath = join(workDir, name);
     if (existsSync(filePath)) {
       return readFileSync(filePath, "utf8").trim();
     }
+  }
+  const envValue = process.env[envName] || "";
+  if (envValue && /^[\x00-\x7F]*$/.test(envValue) && !envValue.includes("你的")) {
+    return envValue.trim();
   }
   return "";
 }
