@@ -956,6 +956,18 @@ async function handleApi(req, res, url) {
       sendJson(res, 502, { error: "网络搜索暂时不可用，请稍后再试" });
       return;
     }
+    if (url.searchParams.get("debug") === "1") {
+      sendJson(res, 200, {
+        keyword,
+        debug: true,
+        items: items.map((item) => ({
+          title: item.title,
+          url: item.link,
+          snippet: item.snippet,
+        })),
+      });
+      return;
+    }
     const settled = await Promise.allSettled(
       items.slice(0, 6).map(async (item) => {
         let text = null;
