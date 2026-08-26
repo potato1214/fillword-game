@@ -163,7 +163,7 @@ if (!renderKey) {
   process.exit(0);
 }
 
-const renderServiceName = "fillword-game-sg";
+const renderServiceName = "fillword-game-v2";
 console.log("step: 检查 Render 服务");
 console.log("step: 获取 Render 工作区");
 const ownersRes = await fetch("https://api.render.com/v1/owners", {

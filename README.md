@@ -28,7 +28,7 @@ node server.js
 
 ## 线上地址
 
-当前正式部署地址：<https://fillword-game-sg.onrender.com>
+当前正式部署地址：<https://fillword-game-v2.onrender.com>
 
 网站部署在 Render 免费实例上，手机和电脑都可以直接访问；超过约 15 分钟没有访问后实例会休眠，下一次打开可能需要等待几十秒冷启动。
 

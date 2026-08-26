@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: fillword-game-sg
+    name: fillword-game-v2
     runtime: docker
     plan: free
     region: singapore
