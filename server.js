@@ -74,7 +74,7 @@ function parseSlots(text) {
 }
 
 function isPreferred(hint) {
-  return /名词|水果|食物|数字|数词|数量|食材|饮料|蔬菜|汤|调料|配料|家禽|材料|部门|东西|物品|动物|职业|称呼|身份|人物|人名|地点|身体|颜色|节日|公司|节目|技能|结果|愿望|科目|家具|电器|工具|服装|品牌|夏季|当季|带籽|消暑|热汤|滋补|家常菜|禽类|液体|危险|物质|甜品|名字|口头禅|运动项目|口号|乐器|首歌|决定|描述|种植|场所|贵金属|金属|价格|满减|优惠|带花纹|圆的水果|常见水果|交通工具|一本书|一种票|开始时间|结束时间|游乐设施|年份|故事|宠物|面食|时间|薪酬|奖励|收入|建筑|娱乐|读物|文具|餐具|衣物|家电|运动器材|文章|课文|台词|歌词|报告|方案|计划|题目|答案|知识|问题|简历|名片|菜单/.test(
+  return /名词|水果|食物|数字|数词|数量|食材|饮料|蔬菜|汤|调料|配料|家禽|材料|部门|东西|物品|动物|职业|称呼|身份|人物|人名|地点|身体|颜色|节日|公司|节目|技能|结果|愿望|科目|家具|电器|工具|服装|品牌|夏季|当季|带籽|消暑|热汤|滋补|家常菜|禽类|液体|危险|物质|甜品|名字|口头禅|运动项目|口号|乐器|首歌|决定|描述|种植|场所|贵金属|金属|价格|满减|优惠|带花纹|圆的水果|常见水果|交通工具|一本书|一种票|开始时间|结束时间|游乐设施|年份|故事|宠物|面食|时间|薪酬|奖励|收入|建筑|娱乐|读物|文具|餐具|衣物|家电|运动器材|文章|课文|台词|歌词|报告|方案|计划|题目|答案|知识|问题|简历|名片|菜单|肉类|主食|饮品|酒类/.test(
     hint,
   );
 }
@@ -387,6 +387,59 @@ const NUMERAL_STOP_SUFFIX = new Set(
   "些起直切定般样方面旦准共生心味齐致同口气路下边处会儿夜点".split(""),
 );
 
+const COMPOUND_HINTS = {
+  肉: "一种肉类",
+  瓜: "一种水果",
+  汤: "一种汤",
+  茶: "一种饮品",
+  饭: "一种主食",
+  面: "一种面食",
+  菜: "一种菜",
+  果: "一种水果",
+  汁: "一种饮料",
+  奶: "一种饮品",
+  酒: "一种酒类",
+  蛋: "一种食材",
+  粉: "一种食物",
+  饼: "一种食物",
+  粥: "一种食物",
+  糖: "一种甜品",
+  水: "一种液体",
+  车: "一种交通工具",
+  店: "一个地点",
+  馆: "一个地点",
+  楼: "一个地点",
+  园: "一个地点",
+  院: "一个地点",
+  公司: "一个单位",
+  学校: "一个地点",
+  医院: "一个地点",
+  超市: "一个地点",
+  饭店: "一个地点",
+  酒店: "一个地点",
+};
+
+function findCompoundCandidates(text) {
+  const suffixPattern = Object.keys(COMPOUND_HINTS)
+    .sort((a, b) => b.length - a.length)
+    .join("|");
+  const re = new RegExp(
+    `([\\u4e00-\\u9fff]{1,3})(${suffixPattern})`,
+    "g",
+  );
+  const candidates = [];
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    const word = match[0];
+    candidates.push({
+      word,
+      hint: COMPOUND_HINTS[match[2]],
+      index: match.index,
+    });
+  }
+  return candidates;
+}
+
 function contextHint(text, index, word, baseHint) {
   const before = text.slice(Math.max(0, index - 4), index);
   const after = text.slice(index + word.length, index + word.length + 4);
@@ -441,6 +494,7 @@ function isNumericWord(word) {
 
 function findBlankCandidates(text) {
   const candidates = [];
+  candidates.push(...findCompoundCandidates(text));
   const numberRe = /\d+(?:\.\d+)?|[零一二三四五六七八九十百千万两]+/g;
   let match;
   while ((match = numberRe.exec(text)) !== null) {
@@ -474,12 +528,14 @@ function findBlankCandidates(text) {
       from = match + word.length;
     }
   }
-  candidates.sort((a, b) => a.index - b.index);
+  candidates.sort(
+    (a, b) => a.index - b.index || b.word.length - a.word.length,
+  );
   const kept = [];
   let lastEnd = -1;
   for (const candidate of candidates) {
     const end = candidate.index + candidate.word.length;
-    if (candidate.index >= lastEnd) {
+    if (candidate.index > lastEnd) {
       kept.push(candidate);
       lastEnd = end;
     }
