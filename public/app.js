@@ -29,6 +29,15 @@ function showToast(message) {
   showToast.timer = setTimeout(() => toast.classList.add("hidden"), 2600);
 }
 
+function isWebUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 async function api(url, options = {}) {
   const res = await fetch(url, {
     headers: { "Content-Type": "application/json" },
@@ -113,6 +122,10 @@ async function handleSearch() {
     selectScript(match);
     return;
   }
+  if (isWebUrl(value)) {
+    await searchNetwork(value);
+    return;
+  }
   if (value.includes("\n") || value.length >= 20) {
     try {
       const data = await api("/api/custom/round", {
@@ -152,7 +165,12 @@ async function searchNetwork(keyword) {
   loading.textContent = "正在全网搜索台词…";
   results.append(loading);
   try {
-    const data = await api(`/api/search?q=${encodeURIComponent(keyword)}`);
+    const data = isWebUrl(keyword)
+      ? await api("/api/fetch/script", {
+          method: "POST",
+          body: JSON.stringify({ url: keyword }),
+        })
+      : await api(`/api/search?q=${encodeURIComponent(keyword)}`);
     renderNetworkResults(data.results);
   } catch (err) {
     results.replaceChildren();

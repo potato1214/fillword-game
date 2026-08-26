@@ -134,11 +134,20 @@ function buildSegments(round, answers, original) {
   const text = round.script.text;
   const segments = [];
   let cursor = 0;
+  const blankedSingle = new Set();
   for (const slot of round.slots) {
     if (slot.index > cursor) {
       segments.push({ type: "text", value: text.slice(cursor, slot.index) });
     }
-    if (!original && round.selectedWords.has(slot.word)) {
+    let shouldBlank = !original && round.selectedWords.has(slot.word);
+    if (shouldBlank && round.singleBlankWords?.has(slot.word)) {
+      if (blankedSingle.has(slot.word)) {
+        shouldBlank = false;
+      } else {
+        blankedSingle.add(slot.word);
+      }
+    }
+    if (shouldBlank) {
       const raw = answers[slot.word];
       const answer = raw === undefined || raw === null ? "" : String(raw).trim();
       if (answer) {
@@ -423,6 +432,13 @@ function contextHint(text, index, word, baseHint) {
   return baseHint;
 }
 
+function isNumericWord(word) {
+  return (
+    /^\d+(?:\.\d+)?$/.test(word) ||
+    /^[零一二三四五六七八九十百千万两]+$/.test(word)
+  );
+}
+
 function findBlankCandidates(text) {
   const candidates = [];
   const numberRe = /\d+(?:\.\d+)?|[零一二三四五六七八九十百千万两]+/g;
@@ -499,7 +515,10 @@ function blankCustomText(text, blankCount) {
   const picked = [...pickedPreferred, ...restPool.slice(0, remaining)];
   const replacements = [];
   for (const group of picked) {
-    for (const index of group.occurrences) {
+    const occurrences = isNumericWord(group.word)
+      ? group.occurrences.slice(0, 1)
+      : group.occurrences;
+    for (const index of occurrences) {
       replacements.push({
         index,
         length: group.word.length,
@@ -529,6 +548,11 @@ function createRound(script, requestedCount) {
     Math.min(groups.length, Number(requestedCount) || 8),
   );
   const selectedGroups = selectGroups(groups, blankCount);
+  const singleBlankWords = new Set(
+    selectedGroups
+      .filter((group) => isNumericWord(group.word))
+      .map((group) => group.word),
+  );
   const roundId = crypto.randomUUID();
   rounds.set(roundId, {
     script,
@@ -536,6 +560,7 @@ function createRound(script, requestedCount) {
     groups,
     selectedGroups,
     selectedWords: new Set(selectedGroups.map((group) => group.word)),
+    singleBlankWords,
     createdAt: Date.now(),
   });
   return {
@@ -603,6 +628,71 @@ function extractPageScript(html) {
   return text;
 }
 
+function dialogueSpeakers(scene) {
+  const speakers = new Set();
+  for (const line of scene.split("\n")) {
+    const paren = line.match(/^（([^）]{1,12})）/);
+    const colon = line.match(/^([^：:]{1,16})[：:]/);
+    const speaker = paren?.[1] || colon?.[1];
+    if (
+      speaker &&
+      speaker.trim().length >= 2 &&
+      speaker.trim().length <= 16 &&
+      /[\u4e00-\u9fff]/.test(speaker) &&
+      !/^\d|^https?/i.test(speaker) &&
+      !/台词|剧情|简介|人物|场景|角色|剧本|正文|原文|片段|回复|回答|网友|标题/.test(speaker)
+    ) {
+      speakers.add(speaker.trim());
+    }
+  }
+  return speakers;
+}
+
+function sceneScore(scene, keyword) {
+  const speakerCount = dialogueSpeakers(scene).size;
+  const dialogueLines = scene
+    .split("\n")
+    .filter((line) => {
+      const paren = line.match(/^（([^）]{1,12})）/);
+      const colon = line.match(/^([^：:]{1,16})[：:]/);
+      const speaker = paren?.[1] || colon?.[1];
+      return speaker && /[\u4e00-\u9fff]/.test(speaker);
+    }).length;
+  const keywordHits = keyword
+    ? (scene.match(new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length
+    : 0;
+  return speakerCount * 6 + dialogueLines * 2 + keywordHits * 3;
+}
+
+function extractDialogueScenes(html, keyword, maxScenes = 4) {
+  const lines = htmlToDialogueLines(html);
+  if (lines.length < 4) return [];
+  const chunks = [];
+  let current = [];
+  for (const line of lines) {
+    current.push(line);
+    if (current.length >= 12) {
+      chunks.push(current.join("\n"));
+      current = [];
+    }
+  }
+  if (current.length >= 4) chunks.push(current.join("\n"));
+  return chunks
+    .map((text) => ({
+      text,
+      score: sceneScore(text, keyword),
+      speakers: dialogueSpeakers(text).size,
+    }))
+    .filter(
+      (scene) =>
+        scene.text.length >= 80 &&
+        scene.speakers >= 2,
+    )
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxScenes)
+    .map((scene) => scene.text);
+}
+
 async function fetchPageText(pageUrl) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 7000);
@@ -642,13 +732,21 @@ function searchItemLooksRelevant(item, keyword) {
 }
 
 function isScriptLikeSnippet(snippet, keyword) {
-  const dialogueMarks = (snippet.match(/[：:]/g) || []).length;
-  const hasParenthesis = /[（(]/.test(snippet);
   const hasScriptHint = /台词|剧本|名场面|经典片段|对话/.test(snippet);
+  const speakerMentions = (snippet.match(/[^：:\s][^：:]{0,15}[：:]/g) || []).filter(
+    (match) => {
+      const speaker = match.slice(0, -1).trim();
+      return (
+        speaker.length >= 2 &&
+        speaker.length <= 16 &&
+        /[\u4e00-\u9fff]/.test(speaker) &&
+        !/^\d|^https?/i.test(speaker)
+      );
+    },
+  ).length;
   return (
     snippet.length >= 60 &&
-    (dialogueMarks >= 2 ||
-      (hasParenthesis && (dialogueMarks >= 1 || hasScriptHint || snippet.includes(keyword)))) &&
+    speakerMentions >= 2 &&
     (snippet.includes(keyword) || hasScriptHint)
   );
 }
@@ -712,6 +810,8 @@ async function searchBing(keyword) {
   const alias = aliasRules.find((rule) =>
     rule.keys.some((key) => keyword.includes(key)),
   );
+  const isBook = /书|小说|名著|文学/.test(keyword);
+  const isMovie = /电影|电视剧|剧集|影片|番|动画/.test(keyword);
   const variants = [];
   if (alias) variants.push(alias.query);
   variants.push(
@@ -721,7 +821,11 @@ async function searchBing(keyword) {
     `"${keyword}" 剧本`,
     `"${keyword}" 名场面`,
     `${keyword} 台词 剧本`,
+    `${keyword} 片段 人物 对话`,
+    `${keyword} 经典片段 对话`,
   );
+  if (isBook) variants.push(`"${keyword}" 原文 片段 对话`);
+  if (isMovie) variants.push(`"${keyword}" 电影 片段 台词`);
 
   const seen = new Set();
   const merged = [];
@@ -944,6 +1048,52 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/fetch/script") {
+    let body;
+    try {
+      body = await readBody(req);
+    } catch {
+      sendJson(res, 400, { error: "请求格式不正确" });
+      return;
+    }
+    const pageUrl = typeof body.url === "string" ? body.url.trim() : "";
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(pageUrl);
+      if (!/^https?:$/.test(parsedUrl.protocol)) throw new Error("bad protocol");
+    } catch {
+      sendJson(res, 400, { error: "请输入正确的网页链接" });
+      return;
+    }
+    let html;
+    try {
+      html = await fetchPageText(parsedUrl.href);
+    } catch {
+      sendJson(res, 502, { error: "这个网页暂时打不开，换个链接试试" });
+      return;
+    }
+    let scenes = extractDialogueScenes(html, "", 6);
+    if (scenes.length === 0) {
+      const text = extractPageScript(html);
+      if (text) scenes = [text];
+    }
+    if (scenes.length === 0) {
+      sendJson(res, 404, { error: "这个网页里没找到可用的对话片段" });
+      return;
+    }
+    sendJson(res, 200, {
+      url: parsedUrl.href,
+      results: scenes.map((text, index) => ({
+        title: `对话片段 ${index + 1}`,
+        url: parsedUrl.href,
+        snippet: text.slice(0, 120),
+        text,
+        fallback: false,
+      })),
+    });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/search") {
     const keyword = (url.searchParams.get("q") || "").trim();
     if (keyword.length < 2) {
@@ -959,31 +1109,47 @@ async function handleApi(req, res, url) {
     }
     const settled = await Promise.allSettled(
       items.slice(0, 6).map(async (item) => {
-        let text = null;
-        let fallback = false;
+        let scenes = [];
         try {
           const html = await fetchPageText(item.link);
-          text = extractPageScript(html);
+          scenes = extractDialogueScenes(html, keyword, 3);
         } catch {
-          text = null;
+          scenes = [];
         }
-        if (!text && isScriptLikeSnippet(item.snippet, keyword)) {
-          text = item.snippet;
-          fallback = true;
+        if (scenes.length > 0) {
+          return scenes.map((text, index) => ({
+            title: `${item.title} · 片段${index + 1}`,
+            url: item.link,
+            snippet: text.slice(0, 120),
+            text,
+            fallback: false,
+          }));
         }
-        if (!text) return null;
-        return {
-          title: item.title,
-          url: item.link,
-          snippet: item.snippet,
-          text,
-          fallback,
-        };
+        if (isScriptLikeSnippet(item.snippet, keyword)) {
+          return [
+            {
+              title: item.title,
+              url: item.link,
+              snippet: item.snippet,
+              text: item.snippet,
+              fallback: true,
+            },
+          ];
+        }
+        return [];
       }),
     );
+    const seen = new Set();
     const results = settled
-      .filter((entry) => entry.status === "fulfilled" && entry.value)
-      .map((entry) => entry.value);
+      .filter((entry) => entry.status === "fulfilled")
+      .flatMap((entry) => entry.value)
+      .filter((item) => {
+        const key = `${item.url}|${item.text.slice(0, 80)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 8);
     if (results.length === 0) {
       sendJson(res, 404, { error: "没搜到可用的热梗台词，换个关键词试试" });
       return;
