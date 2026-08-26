@@ -621,18 +621,37 @@ async function fetchPageText(pageUrl) {
   }
 }
 
-async function searchBing(keyword) {
-  const url = `https://www.bing.com/search?q=${encodeURIComponent(
-    `"${keyword}" 台词`,
-  )}&format=rss`;
-  const res = await fetch(url, {
-    headers: { "User-Agent": BROWSER_UA },
-    redirect: "follow",
-  });
-  if (!res.ok) {
-    throw new Error(`search HTTP ${res.status}`);
+function searchItemLooksRelevant(item, keyword) {
+  if (
+    /电子|采购|商城|股票|行情|涨|食谱|做法|炖|炒|食材|采购平台|有限公司|集团|股份有限公司|公司简介|测速|下载|软件|招聘|咨询|贷款|信用卡|装修|房产|福利|抽奖|广告|推广/.test(
+      `${item.title} ${item.snippet}`,
+    )
+  ) {
+    return false;
   }
-  const xml = await res.text();
+  if (/台词|剧本|原文|全文|对话|名场面|片段|文案|经典/.test(item.title)) {
+    return true;
+  }
+  const hasKeyword =
+    item.title.includes(keyword) ||
+    item.snippet.includes(keyword);
+  return (
+    hasKeyword &&
+    /台词|剧本|名场面|完整对话|原文|经典片段/.test(item.snippet)
+  );
+}
+
+function isScriptLikeSnippet(snippet, keyword) {
+  const dialogueMarks = (snippet.match(/[：:]/g) || []).length;
+  const hasParenthesis = /[（(]/.test(snippet);
+  return (
+    snippet.length >= 60 &&
+    (dialogueMarks >= 2 || (dialogueMarks >= 1 && hasParenthesis)) &&
+    (snippet.includes(keyword) || /台词|剧本|名场面|经典片段/.test(snippet))
+  );
+}
+
+function parseBingRss(xml) {
   const items = [];
   const itemRe = /<item>([\s\S]*?)<\/item>/g;
   let match;
@@ -649,14 +668,77 @@ async function searchBing(keyword) {
         .trim()
         .slice(0, 320),
     };
-    if (
-      /台词|剧本|原文|全文|对话|名场面|片段|文案/.test(item.title) ||
-      item.snippet.includes("：")
-    ) {
-      items.push(item);
-    }
+    items.push(item);
   }
   return items;
+}
+
+async function fetchBingRss(query) {
+  const params = new URLSearchParams({
+    q: query,
+    format: "rss",
+    mkt: "zh-CN",
+    setlang: "zh-hans",
+  });
+  for (const host of ["cn.bing.com", "www.bing.com"]) {
+    try {
+      const res = await fetch(`https://${host}/search?${params}`, {
+        headers: {
+          "User-Agent": BROWSER_UA,
+          "Accept-Language": "zh-CN,zh;q=0.9",
+        },
+        redirect: "follow",
+      });
+      if (!res.ok) continue;
+      const xml = await res.text();
+      const items = parseBingRss(xml);
+      if (items.length > 0) return items;
+    } catch {
+      // 换下一个 Bing 域名继续尝试
+    }
+  }
+  return [];
+}
+
+async function searchBing(keyword) {
+  const aliasRules = [
+    { keys: ["鸡汤来"], query: `"鸡汤来咯"` },
+    { keys: ["华强"], query: `"华强买瓜" 台词` },
+    { keys: ["鸡你太美"], query: `"鸡你太美"` },
+  ];
+  const alias = aliasRules.find((rule) =>
+    rule.keys.some((key) => keyword.includes(key)),
+  );
+  const variants = [];
+  if (alias) variants.push(alias.query);
+  variants.push(
+    `"${keyword}"`,
+    `"${keyword}" 台词`,
+    `"${keyword}" 完整台词`,
+    `"${keyword}" 剧本`,
+    `"${keyword}" 名场面`,
+    `${keyword} 台词 剧本`,
+  );
+
+  const seen = new Set();
+  const merged = [];
+  for (const variant of variants) {
+    let items = [];
+    try {
+      items = await fetchBingRss(variant);
+    } catch {
+      items = [];
+    }
+    for (const item of items) {
+      const key = item.link.split("?")[0];
+      if (!seen.has(key) && searchItemLooksRelevant(item, keyword)) {
+        seen.add(key);
+        merged.push(item);
+      }
+    }
+    if (merged.length >= 10) break;
+  }
+  return merged.slice(0, 10);
 }
 
 async function handleApi(req, res, url) {
@@ -796,30 +878,33 @@ async function handleApi(req, res, url) {
       sendJson(res, 502, { error: "网络搜索暂时不可用，请稍后再试" });
       return;
     }
-    const results = [];
-    for (const item of items.slice(0, 5)) {
-      let text = null;
-      let fallback = false;
-      try {
-        const html = await fetchPageText(item.link);
-        text = extractPageScript(html);
-      } catch {
-        text = null;
-      }
-      if (!text && item.snippet.length >= 60) {
-        text = item.snippet;
-        fallback = true;
-      }
-      if (text) {
-        results.push({
+    const settled = await Promise.allSettled(
+      items.slice(0, 6).map(async (item) => {
+        let text = null;
+        let fallback = false;
+        try {
+          const html = await fetchPageText(item.link);
+          text = extractPageScript(html);
+        } catch {
+          text = null;
+        }
+        if (!text && isScriptLikeSnippet(item.snippet, keyword)) {
+          text = item.snippet;
+          fallback = true;
+        }
+        if (!text) return null;
+        return {
           title: item.title,
           url: item.link,
           snippet: item.snippet,
           text,
           fallback,
-        });
-      }
-    }
+        };
+      }),
+    );
+    const results = settled
+      .filter((entry) => entry.status === "fulfilled" && entry.value)
+      .map((entry) => entry.value);
     if (results.length === 0) {
       sendJson(res, 404, { error: "没搜到可用的热梗台词，换个关键词试试" });
       return;
