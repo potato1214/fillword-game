@@ -706,6 +706,7 @@ async function searchBing(keyword) {
   const aliasRules = [
     { keys: ["鸡汤来"], query: `"鸡汤来咯"` },
     { keys: ["华强"], query: `"华强买瓜" 台词` },
+    { keys: ["生异形", "生意行", "萨日朗", "这瓜保熟吗"], query: `"华强买瓜" 台词` },
     { keys: ["鸡你太美"], query: `"鸡你太美"` },
   ];
   const alias = aliasRules.find((rule) =>
@@ -954,18 +955,6 @@ async function handleApi(req, res, url) {
       items = await searchScripts(keyword);
     } catch {
       sendJson(res, 502, { error: "网络搜索暂时不可用，请稍后再试" });
-      return;
-    }
-    if (url.searchParams.get("debug") === "1") {
-      sendJson(res, 200, {
-        keyword,
-        debug: true,
-        items: items.map((item) => ({
-          title: item.title,
-          url: item.link,
-          snippet: item.snippet,
-        })),
-      });
       return;
     }
     const settled = await Promise.allSettled(
