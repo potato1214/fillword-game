@@ -644,10 +644,12 @@ function searchItemLooksRelevant(item, keyword) {
 function isScriptLikeSnippet(snippet, keyword) {
   const dialogueMarks = (snippet.match(/[：:]/g) || []).length;
   const hasParenthesis = /[（(]/.test(snippet);
+  const hasScriptHint = /台词|剧本|名场面|经典片段|对话/.test(snippet);
   return (
     snippet.length >= 60 &&
-    (dialogueMarks >= 2 || (dialogueMarks >= 1 && hasParenthesis)) &&
-    (snippet.includes(keyword) || /台词|剧本|名场面|经典片段/.test(snippet))
+    (dialogueMarks >= 2 ||
+      (hasParenthesis && (dialogueMarks >= 1 || hasScriptHint || snippet.includes(keyword)))) &&
+    (snippet.includes(keyword) || hasScriptHint)
   );
 }
 
@@ -739,6 +741,82 @@ async function searchBing(keyword) {
     if (merged.length >= 10) break;
   }
   return merged.slice(0, 10);
+}
+
+function parseSo360(html) {
+  const items = [];
+  const blocks = html.match(/<li class="res-list">[\s\S]*?<\/li>/g) || [];
+  for (const block of blocks) {
+    const anchor = block.match(
+      /<a[^>]*data-mdurl="([^"]+)"[^>]*>([\s\S]*?)<\/a>/,
+    );
+    if (!anchor) continue;
+    const link = decodeEntities(anchor[1].trim());
+    const title = decodeEntities(anchor[2].replace(/<[^>]+>/g, " ").trim());
+    const text = decodeEntities(
+      block
+        .replace(/<script[\s\S]*?<\/script>/g, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " "),
+    ).trim();
+    const snippet = text
+      .replace(title, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 320);
+    if (title && link && /^https?:\/\//.test(link)) {
+      items.push({ title, link, snippet });
+    }
+  }
+  return items;
+}
+
+async function searchSo360(keyword) {
+  const variants = [
+    `${keyword} 台词`,
+    `${keyword} 剧本`,
+    `${keyword} 名场面`,
+  ];
+  const seen = new Set();
+  const items = [];
+  for (const variant of variants) {
+    try {
+      const url = `https://www.so.com/s?q=${encodeURIComponent(variant)}`;
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": BROWSER_UA,
+          "Accept-Language": "zh-CN,zh;q=0.9",
+        },
+        redirect: "follow",
+      });
+      if (!res.ok) continue;
+      const html = await res.text();
+      for (const item of parseSo360(html)) {
+        const key = item.link.split("?")[0];
+        if (!seen.has(key) && searchItemLooksRelevant(item, keyword)) {
+          seen.add(key);
+          items.push(item);
+        }
+      }
+    } catch {
+      // 继续尝试下一个查询
+    }
+    if (items.length >= 2) break;
+  }
+  return items.slice(0, 6);
+}
+
+async function searchScripts(keyword) {
+  const bingItems = await searchBing(keyword);
+  if (bingItems.length >= 2) return bingItems;
+  const soItems = await searchSo360(keyword);
+  const seen = new Set();
+  return [...bingItems, ...soItems].filter((item) => {
+    const key = item.link.split("?")[0];
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 10);
 }
 
 async function handleApi(req, res, url) {
@@ -873,7 +951,7 @@ async function handleApi(req, res, url) {
     }
     let items;
     try {
-      items = await searchBing(keyword);
+      items = await searchScripts(keyword);
     } catch {
       sendJson(res, 502, { error: "网络搜索暂时不可用，请稍后再试" });
       return;
